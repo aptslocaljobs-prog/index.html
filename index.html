@@ -3862,8 +3862,8 @@ ensure();
   'use strict';
   /* Supabase config. Leave blank until the Supabase project is set up (see supabase_setup.sql).
      The anon (public) key is designed to be exposed in a browser; NEVER put a service_role / secret key here. */
-  const SB_URL = '';   // e.g. 'https://xxxx.supabase.co'
-  const SB_ANON = '';  // anon / publishable key only
+  const SB_URL = 'https://abcdefgh.supabase.co';   // e.g. 'https://xxxx.supabase.co'
+  const SB_ANON = 'eyJhbGciOi...your-long-key...';  // anon / publishable key only
   const SB = !!(SB_URL && SB_ANON);
   const $ = id => document.getElementById(id);
   const E = v => (typeof esc === 'function' ? esc(v) : String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
