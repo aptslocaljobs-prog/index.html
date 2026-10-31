@@ -289,7 +289,7 @@ img,video,svg{max-width:100%}body{overflow-wrap:anywhere}
                     <button onclick="renderDataSummary()" class="btn-link">Refresh</button>
                 </div>
                 <div id="dataSummaryRows" class="grid grid-cols-2 gap-2 text-xs"></div>
-                <p class="text-xs text-gray-600 dark:text-gray-400 mt-2">Firebase is removed. All data lives in this browser only (localStorage), so other visitors do not see what you add here. Export a backup regularly.</p>
+                <p class="text-xs text-gray-600 dark:text-gray-400 mt-2">Jobs you add as admin and local vacancies are saved to the shared online database (Supabase), so all visitors see them. Run jobs_setup.sql once, then use Publish all jobs online to upload what is already here. Export a backup regularly.</p>
                 <div class="flex gap-2 mt-3">
                     <button onclick="exportAllData()" class="admin-action-btn bg-indigo-600 text-white hover:bg-indigo-700"><i class="fas fa-download mr-2"></i> Export backup (JSON)</button>
                     <label class="admin-action-btn bg-white dark:bg-gray-700 border border-indigo-300 text-indigo-700 dark:text-indigo-200"><i class="fas fa-upload mr-2"></i> Restore<input type="file" accept="application/json" class="hidden" onchange="importAllData(this)"></label>
@@ -5300,6 +5300,139 @@ body.has-lvfloat{padding-bottom:4.5rem}
 
   document.addEventListener('keydown', e => { if (e.key === 'Escape') { pgRemClose(); pgDelClose(); } });
   try { renderJobs(); filterLocalJobs(); } catch (e) {}
+})();
+</script>
+
+<script id="sharedJobsModule">
+/* ===== Shared jobs: jobs the admin adds and local vacancies are stored in Supabase, so ALL visitors see them.
+   Needs jobs_setup.sql. Keeps working from this browser's storage if the database cannot be reached. ===== */
+(function () {
+  'use strict';
+  const cfg = () => window.__sbCfg || {};
+  if (!cfg().on) return;
+  const BASE = cfg().url + '/rest/v1/', ANON = cfg().anon;
+  const TABLE = { jobs: 'jobs', localJobs: 'local_jobs' };
+  const toast = m => { try { showToast(m); } catch (e) {} };
+  const isAdmin = () => !!(window.__isAdmin && cfg().token);
+  const listOf = k => (k === 'jobs' ? jobs : localJobs);
+
+  /* Private random key of this browser. Only its SHA-256 is stored online (owner_hash). */
+  const secret = (() => {
+    try {
+      let s = localStorage.getItem('apts_owner_secret');
+      if (!s || s.length < 32) { const a = new Uint8Array(24); crypto.getRandomValues(a); s = Array.from(a, b => b.toString(16).padStart(2, '0')).join(''); localStorage.setItem('apts_owner_secret', s); }
+      return s;
+    } catch (e) { return ''; }
+  })();
+  const sha256 = async s => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s))), b => b.toString(16).padStart(2, '0')).join('');
+  let myHashP = null;
+  const myHash = () => myHashP || (myHashP = (secret && window.crypto && crypto.subtle ? sha256(secret) : Promise.resolve(null)).catch(() => null));
+
+  /* Same text for the same data, whatever the key order (the database re-orders keys). */
+  const canon = v => v === null || typeof v !== 'object' ? JSON.stringify(v)
+    : Array.isArray(v) ? '[' + v.map(canon).join(',') + ']'
+    : '{' + Object.keys(v).filter(k => v[k] !== undefined).sort().map(k => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}';
+
+  const hdr = (extra, withKey) => Object.assign({ apikey: ANON, Authorization: 'Bearer ' + (isAdmin() ? cfg().token : ANON), 'Content-Type': 'application/json' }, withKey && secret ? { 'x-owner-key': secret } : {}, extra || {});
+  const sortMs = (j, idx) => { const m = String(j.id).match(/\d{10,}/); return Number(j.createdAt) || (m ? Number(m[0]) : 0) || -idx; };
+  /* The poster's phone / device id is not uploaded; a short hash stands in for it. */
+  const wire = (kind, j, mh) => (kind === 'localJobs' && j.owner && !/^o-[0-9a-f]{12}$/.test(j.owner)) ? Object.assign({}, j, { owner: 'o-' + (mh || '000000000000').slice(0, 12) }) : j;
+
+  const snap = { jobs: null, localJobs: null };   // id -> canonical text of what is online
+  let busy = false, last = 0;
+
+  async function fetchAll(kind) {
+    const url = BASE + TABLE[kind] + '?select=id,data,sort_ms' + (kind === 'localJobs' ? ',owner_hash' : '') + '&order=sort_ms.desc&limit=2000';
+    let r = await fetch(url, { headers: hdr() });
+    if (r.status === 401) r = await fetch(url, { headers: { apikey: ANON, Authorization: 'Bearer ' + ANON } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }
+
+  async function load() {
+    if (busy) return; busy = true;
+    for (const kind of ['jobs', 'localJobs']) {
+      try {
+        const rows = await fetchAll(kind), m = {};
+        rows.forEach(x => { m[x.id] = canon(x.data); });
+        snap[kind] = m;
+        if (rows.length) {
+          const mh = kind === 'localJobs' ? await myHash() : null;
+          window.__setData(kind, rows.map(x => (mh && x.owner_hash === mh) ? Object.assign({}, x.data, { owner: ownerId() }) : x.data));
+        }
+      } catch (e) { /* offline or tables missing: keep what this browser already has */ }
+    }
+    busy = false; last = Date.now();
+  }
+
+  function failed(r) {
+    toast((r.status === 401 || r.status === 403) && isAdmin() ? 'Admin session expired. Sign in again, then save once more.'
+      : 'Could not save to the shared database (error ' + r.status + '). Check that jobs_setup.sql was run.');
+  }
+
+  async function doPush(kind, force) {
+    if (!snap[kind]) { await load(); if (!snap[kind]) return; }
+    const admin = isAdmin();
+    if (kind === 'jobs' && !admin) return;
+    if (force && !admin) return;
+    const mh = await myHash();
+    if (kind === 'localJobs' && !mh) { toast('Posting online needs a secure (https) connection.'); return; }
+    const me = ownerId(), present = {}, ins = [], upd = [];
+    listOf(kind).forEach((j, idx) => {
+      if (!j || !j.id) return; present[j.id] = 1;
+      if (kind === 'localJobs' && !admin && j.owner !== me) return;     // visitors only send their own posts
+      const w = wire(kind, j, mh), s = canon(w);
+      if (force || !(j.id in snap[kind])) ins.push({ id: j.id, data: w, sort_ms: sortMs(j, idx) });
+      else if (snap[kind][j.id] !== s) upd.push({ id: j.id, data: w, s });
+    });
+    const del = Object.keys(snap[kind]).filter(id => !present[id]);
+    const tbl = BASE + TABLE[kind]; let denied = false;
+
+    for (let i = 0; i < ins.length; i += 10) {
+      const part = ins.slice(i, i + 10).map(x => kind === 'localJobs' ? { id: x.id, data: x.data, sort_ms: x.sort_ms, owner_hash: mh } : x);
+      const r = await fetch(tbl + (admin ? '?on_conflict=id' : ''), { method: 'POST', headers: hdr({ Prefer: (admin ? 'resolution=merge-duplicates,' : '') + 'return=minimal' }, true), body: JSON.stringify(part) });
+      if (!r.ok) return failed(r);
+      part.forEach(p => { snap[kind][p.id] = canon(p.data); });
+    }
+    for (const x of upd) {
+      const r = await fetch(tbl + '?id=eq.' + encodeURIComponent(x.id) + '&select=id', { method: 'PATCH', headers: hdr({ Prefer: 'return=representation' }, true), body: JSON.stringify({ data: x.data, updated_at: new Date().toISOString() }) });
+      if (!r.ok) return failed(r);
+      if ((await r.json()).length) snap[kind][x.id] = x.s; else denied = true;
+    }
+    for (let i = 0; i < del.length; i += 40) {
+      const part = del.slice(i, i + 40);
+      const r = await fetch(tbl + '?id=in.(' + part.map(encodeURIComponent).join(',') + ')&select=id', { method: 'DELETE', headers: hdr({ Prefer: 'return=representation' }, true) });
+      if (!r.ok) return failed(r);
+      const got = await r.json(); got.forEach(g => { delete snap[kind][g.id]; });
+      if (got.length < part.length) denied = true;
+    }
+    if (denied) { toast('You can change or delete a vacancy only from the device that posted it (or as admin).'); await load(); }
+  }
+
+  const queue = Promise.resolve();
+  let q = queue;
+  const push = (kind, force) => { q = q.then(() => doPush(kind, force)).catch(() => {}); return q; };
+
+  const _sj = saveJobs;      saveJobs = function () { const r = _sj.apply(this, arguments); push('jobs'); return r; };
+  const _sl = saveLocalJobs; saveLocalJobs = function () { const r = _sl.apply(this, arguments); push('localJobs'); return r; };
+
+  /* Admin button: upload everything this browser has right now (first-time setup / restore). */
+  window.sharedJobsPublishAll = async function () {
+    if (!isAdmin()) return toast('Sign in as admin first.');
+    if (!confirm('Upload all jobs and local vacancies in this browser to the shared online database? All visitors will then see them.')) return;
+    await load();
+    await push('jobs', true); await push('localJobs', true);
+    toast('Published. Visitors now see these jobs.');
+  };
+  function addBtn() {
+    const box = document.querySelector('#dataSummaryBox .flex.gap-2.mt-3');
+    if (!box || document.getElementById('sjPublish')) return;
+    box.classList.add('flex-wrap');
+    box.insertAdjacentHTML('beforeend', '<button id="sjPublish" type="button" onclick="sharedJobsPublishAll()" class="admin-action-btn bg-emerald-600 text-white hover:bg-emerald-700"><i class="fas fa-cloud-upload-alt mr-2"></i> Publish all jobs online</button>');
+  }
+  const start = () => { addBtn(); load(); };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => setTimeout(start, 0)); else start();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - last > 120000) load(); });
 })();
 </script>
 
