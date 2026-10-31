@@ -6551,6 +6551,26 @@ label>i.fas,legend>i.fas,.btn>i.fas{display:inline-block;width:1em;text-align:ce
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
 </script>
+  <!-- Your existing website code -->
+
+  <!-- Paste the new Admin Login script here -->
+  <script>
+  (function () {
+    function openAdminFromUrl() {
+      if (window.location.hash === '#admin-login') {
+        if (typeof window.openAdminLogin === 'function') {
+          window.openAdminLogin();
+        }
+      }
+    }
+
+    window.addEventListener('load', function () {
+      setTimeout(openAdminFromUrl, 300);
+    });
+
+    window.addEventListener('hashchange', openAdminFromUrl);
+  })();
+  </script>
 
 </body>
 </html>
