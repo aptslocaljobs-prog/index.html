@@ -4152,7 +4152,7 @@ ensure();
   'use strict';
   /* Supabase config. */
   const SB_URL = 'https://elcvuucowgtmlgevpzzk.supabase.co';   // e.g. 'https://xxxx.supabase.co'
-  const SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVsY3Z1dWNvd2d0bWxnZXZwenprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM0MzIzOTIsImV4cCI6MjEwOTAwODM5Mn0.4SVUurjK3hGCOFknHVzbAQgsg98j1PgG14q_dmp4ksw';  // anon / publishable key only
+  const SB_ANON = 'sb_publishable_cDs2E-b08_JxUb44dAZmBw_GfYDpEU3';  // anon / publishable key only
   const SB = !!(SB_URL && SB_ANON);
   const $ = id => document.getElementById(id);
   const E = v => (typeof esc === 'function' ? esc(v) : String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
