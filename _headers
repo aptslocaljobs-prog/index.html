@@ -1,0 +1,18 @@
+# Security headers for Netlify / Cloudflare Pages (same file format).
+# Other hosts: copy these values into your server config (nginx/Apache/Firebase/Vercel use different syntax).
+# Replace YOUR-DOMAIN.com with your real domain, then deploy.
+
+/*
+  Strict-Transport-Security: max-age=31536000
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), payment=(), usb=(), geolocation=(self)
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Resource-Policy: same-site
+  Access-Control-Allow-Origin: https://YOUR-DOMAIN.com
+  Vary: Origin
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://www.googletagmanager.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; connect-src 'self' https://api.bigdatacloud.net https://api.postalpincode.in https://elcvuucowgtmlgevpzzk.supabase.co https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'; frame-ancestors 'none'; manifest-src 'self'; worker-src 'self'; upgrade-insecure-requests
+
+/sw.js
+  Cache-Control: no-cache
